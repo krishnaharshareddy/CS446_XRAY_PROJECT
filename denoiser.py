@@ -105,90 +105,9 @@ def read_data(batch_size,split=0.2):
     print('Time spent on loading: {}, now proceeding to training...'.format(time.time()-curr))
     return train_loader,val_loader,test_loader
 
-class Network(nn.Module):
-	def __init__(self):
-		super(Network, self).__init__()
-		
-		p = 0.2
-		self.conv1 = torch.nn.Sequential(
-			#64x64x1
-			nn.Conv2d(1,16,4,stride=2,padding=1),
-			# torch.nn.BatchNorm2d(16),
-			torch.nn.ReLU(),
-			torch.nn.Dropout2d(p),
-			#32x32x16
-			nn.Conv2d(16,32,4,stride=2,padding=1),
-			# torch.nn.BatchNorm2d(32),
-			torch.nn.ReLU(),
-			torch.nn.Dropout2d(p),
-			#16x16x32
-			nn.Conv2d(32,64,4,stride=2,padding=1),
-			# torch.nn.BatchNorm2d(16),
-			torch.nn.ReLU(),
-			torch.nn.Dropout2d(p),
-		# 	#8x8x64
-		# Deconv
-		# 	#64x8x8
-			nn.ConvTranspose2d(64,32,4,stride=2,padding=1),
-			torch.nn.LayerNorm((32, 16, 16)),
-			torch.nn.LeakyReLU(0.2),
-			torch.nn.Dropout2d(p),
-			#32x16x16
-			nn.ConvTranspose2d(32,16,4,stride=2,padding=1),
-			torch.nn.LayerNorm((16, 32, 32)),
-			torch.nn.LeakyReLU(0.2),
-			torch.nn.Dropout2d(p),
-			#16x32x32
-			nn.ConvTranspose2d(16,8,4,stride=2,padding=1),
-			torch.nn.LayerNorm((8, 64, 64)),
-			torch.nn.LeakyReLU(0.2),
-			torch.nn.Dropout2d(p),
-			#8x64x64
-			nn.ConvTranspose2d(8,4,3,stride=1,padding=1),
-			torch.nn.LayerNorm((4, 64, 64)),
-			torch.nn.LeakyReLU(0.2),
-			torch.nn.Dropout2d(p),
-			#4x64x64
-			nn.ConvTranspose2d(4,2,4,stride=2,padding=1),
-			torch.nn.LayerNorm((2, 128, 128)),
-			torch.nn.LeakyReLU(0.2),
-			torch.nn.Dropout2d(p),
-			#2x128x128
-			nn.ConvTranspose2d(2,1,3,stride=1,padding=1),
-			torch.nn.Dropout2d(p),
-			torch.nn.Sigmoid(),
-			)
+from network import Network
+from network import Discriminator
 
-		self.conv2 = torch.nn.Sequential(
-			#1x64x64
-			nn.ConvTranspose2d(1,2,4,stride=2,padding=1),
-			torch.nn.Dropout2d(p),
-			torch.nn.LeakyReLU(0.2),
-			#2x128x128
-			nn.Conv2d(2,1,3,stride=1,padding=1),
-			torch.nn.Sigmoid(),
-			)
-
-		self.conv_mixer = torch.nn.Sequential(
-			#2x128x128
-			nn.Conv2d(4,2,3,stride=1,padding=1),
-			torch.nn.ReLU(),
-			#2x128x128
-			nn.Conv2d(2,1,3,stride=1,padding=1),
-			torch.nn.Sigmoid(),
-			#1x128x128
-			)
-
-	def forward(self, x):
-		bilinear = nn.functional.interpolate(x,scale_factor=2, mode='bilinear', align_corners = False)
-		nearest = nn.functional.interpolate(x,scale_factor=2, mode='nearest')
-		# x = self.conv0(x)
-		conv2 = self.conv2(x)
-		conv1 = self.conv1(x)
-		# x = (conv1+1)/2
-		x = torch.cat((bilinear,nearest,conv1,conv2),1)
-		x = self.conv_mixer(x)
-		return x
 def weights_init(m):
 	if isinstance(m, torch.nn.Conv2d):
 		torch.nn.init.xavier_uniform_(m.weight.data)
@@ -204,15 +123,15 @@ np.random.seed(1)
 torch.backends.cudnn.deterministic = True
 torch.manual_seed(3)
 def rmse(img1,img2):
-	x = ((img1-img2)**2).sum([1,2,3])
+	x = ((255*(img1-img2))**2).mean(1).mean(1).mean(1)
 	x = torch.sqrt(x).mean()
 	return x
 if __name__=='__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--model_name', default='test')
 	parser.add_argument('--batch_size', default=64)
-	parser.add_argument('--lr', default=5e-3)
-	parser.add_argument('--l1', default=1e-1)
+	parser.add_argument('--lr', type=float, default=5e-3)
+	parser.add_argument('--l1', type=float, default=1e1)
 	parser.add_argument('--num_iters', default=100)
 	parser.add_argument("--train", dest="train", default=False, action="store_true")  # noqa
 	parser.add_argument('--test_save_path', default='test')
@@ -221,12 +140,19 @@ if __name__=='__main__':
 	train_loader,val_loader,test_loader = read_data(args.batch_size)
 	network = Network()
 	network.apply(weights_init)
+
+	d = Discriminator()
+	d.apply(weights_init)
+	bce_loss = torch.nn.BCEWithLogitsLoss()
+	true_crit, false_crit = torch.ones(args.batch_size, 1, device='cuda'), torch.zeros(args.batch_size, 1, device='cuda')
 	print(network)
 	train_loss = []
 	val_loss = []
 	if args.train:
 		optimizer = torch.optim.Adam(network.parameters(), lr=args.lr)
+		d_optimizer = torch.optim.Adam(d.parameters(), lr=args.lr)
 		network.cuda()
+		d.cuda()
 		for epoch in range(args.num_iters):
 			train_loader,val_loader,test_loader = read_data(args.batch_size)
 			network.train()
@@ -234,24 +160,31 @@ if __name__=='__main__':
 				img64 = x['img64'].cuda()
 				img128 = x['img128'].cuda()
 				imgname = x['img_name']
-
 				optimizer.zero_grad()
-
 				g_img128 = network(img64)
-
-				l2_loss = ((img128-g_img128)**2).mean()
-				l1_loss = (abs(img128-g_img128)).mean()
+				l2_loss = ((255*(img128-g_img128))**2).mean()
+				l1_loss = (abs(255*(img128-g_img128))).mean()
 				rmse_loss = rmse(img128,g_img128)
 				ssim_loss = ssim(img128,g_img128)
-				loss = rmse_loss #+ l1_loss - args.l1*ssim_loss
+				# dloss = bce_loss(d(g_img128,img64),true_crit)
+				loss = l2_loss + l1_loss  - args.l1*ssim_loss
 				loss.backward()
 				optimizer.step()
+
+				# d_optimizer.zero_grad()
+				# g_img128 = network(img64)
+				# g_img128.detach()
+				# dloss = bce_loss(d(img128,img64),true_crit)+bce_loss(d(g_img128,img64),false_crit)
+				# dloss.backward()
+				# d_optimizer.step()
+
+
 				if idx%10 ==0:
-					print("TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} L2:{} TOTAL:{} ".format(epoch,idx,
+					print("TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} d:{} TOTAL:{} ".format(epoch,idx,
 						(rmse(img128,g_img128).detach().cpu().numpy()),
 						ssim_loss.detach().cpu().numpy(),
 						l1_loss.detach().cpu().numpy(),
-						l2_loss.detach().cpu().numpy(),
+						0,#dloss.detach().cpu().numpy(),
 						loss.detach().cpu().numpy()))
 			train_loss.append((rmse(img128,g_img128).detach().cpu().numpy()))
 
