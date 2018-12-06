@@ -62,7 +62,7 @@ class Network_res_128(nn.Module):
 	def __init__(self):
 		super(Network_res_128, self).__init__()
 		
-		p=0.2
+		p=0.01
 		self.conv1 = torch.nn.Sequential(
 			#64x64x1
 			nn.Conv2d(1,16,3,stride=2,padding=1,dilation=1),
@@ -145,7 +145,7 @@ class Network_res(nn.Module):
 	def __init__(self):
 		super(Network_res, self).__init__()
 		
-		p = 0.2
+		p = 0.01
 		self.conv1 = torch.nn.Sequential(
 			#64x64x1
 			nn.Conv2d(1,16,3,stride=2,padding=1,dilation=1),
@@ -228,7 +228,7 @@ class Network_up(nn.Module):
 	def __init__(self):
 		super(Network_up, self).__init__()
 		
-		p = 0.2
+		p = 0.01
 		self.conv1 = torch.nn.Sequential(
 			#64x64x1
 			nn.Conv2d(2,16,3,stride=2,padding=1,dilation=1),
@@ -311,7 +311,7 @@ class Network(nn.Module):
 	def __init__(self):
 		super(Network, self).__init__()
 		
-		p = 0.2
+		p = 0.01
 		self.conv1 = torch.nn.Sequential(
 			#64x64x1
 			nn.Conv2d(1,16,3,stride=2,padding=1,dilation=1),
@@ -506,18 +506,23 @@ class Network2(nn.Module):
 class Network_res_128_(nn.Module):
 	def __init__(self):
 		super(Network_res_128_, self).__init__()
+		p = 0.2
 		self.conv1 = torch.nn.Sequential(
 			#64x64x1
 			nn.Conv2d(1,64,3,stride=1,padding=1),
+			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
 			nn.Conv2d(64,64,3,stride=1,padding=1),
 			nn.BatchNorm2d(64),
+			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
 			nn.Conv2d(64,64,3,stride=1,padding=1),
 			nn.BatchNorm2d(64),
+			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
 			nn.Conv2d(64,64,3,stride=1,padding=1),
 			nn.BatchNorm2d(64),
+			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
 			nn.Conv2d(64,1,3,stride=1,padding=1),
 			)
@@ -525,6 +530,7 @@ class Network_res_128_(nn.Module):
 		self.conv2 = torch.nn.Sequential(
 			#1x64x64
 			nn.Conv2d(1,2,3,stride=1,padding=1),
+			torch.nn.Dropout2d(p),
 			#2x128x128
 			nn.Conv2d(2,1,3,stride=1,padding=1),
 			# torch.nn.Sigmoid(),
@@ -534,6 +540,7 @@ class Network_res_128_(nn.Module):
 		self.conv_mixer = torch.nn.Sequential(
 			#2x128x128
 			nn.Conv2d(3,2,3,stride=1,padding=1),
+			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
 			#2x128x128
 			nn.Conv2d(2,1,3,stride=1,padding=1),
@@ -552,6 +559,7 @@ class Network_res_128_(nn.Module):
 class Network_res_(nn.Module):
 	def __init__(self):
 		super(Network_res_, self).__init__()
+		p = 0.2
 		self.conv1 = torch.nn.Sequential(
 			#64x64x1
 			nn.Conv2d(1,64,3,stride=1,padding=1),

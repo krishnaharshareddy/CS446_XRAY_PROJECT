@@ -23,7 +23,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from torchvision import transforms, datasets
 from skimage import io, transform
 from PIL import Image
-from utils import ssim
+from utils import ssim,tv_loss
 import torchvision.transforms.functional as TF
 import torchvision
 import numpy.random as random
@@ -105,6 +105,15 @@ def read_data(batch_size,split=0.2):
     print('Time spent on loading: {}, now proceeding to training...'.format(time.time()-curr))
     return train_loader,val_loader,test_loader
 
+def exp_lr_scheduler(optimizer, epoch, lr_decay=0.1, lr_decay_epoch=7):
+    """Decay learning rate by a factor of lr_decay every lr_decay_epoch epochs"""
+    if epoch % lr_decay_epoch or epoch>35:
+        return optimizer
+    
+    for param_group in optimizer.param_groups:
+        param_group['lr'] *= lr_decay
+    return optimizer
+
 from network import Network
 from network import Discriminator
 
@@ -132,7 +141,7 @@ if __name__=='__main__':
 	parser.add_argument('--batch_size', default=64)
 	parser.add_argument('--lr', type=float, default=5e-3)
 	parser.add_argument('--l1', type=float, default=1e1)
-	parser.add_argument('--num_iters', default=100)
+	parser.add_argument('--num_iters', type=int, default=100)
 	parser.add_argument("--train", dest="train", default=False, action="store_true")  # noqa
 	parser.add_argument('--test_save_path', default='test')
 	args = parser.parse_args()
@@ -144,7 +153,8 @@ if __name__=='__main__':
 	d = Discriminator()
 	d.apply(weights_init)
 	bce_loss = torch.nn.BCEWithLogitsLoss()
-	true_crit, false_crit = torch.ones(args.batch_size, 1, device='cuda'), torch.zeros(args.batch_size, 1, device='cuda')
+	true_crit, fake_crit = torch.ones(args.batch_size, 1, device='cuda'), torch.zeros(args.batch_size, 1, device='cuda')
+	
 	print(network)
 	train_loss = []
 	val_loss = []
@@ -166,6 +176,7 @@ if __name__=='__main__':
 				l1_loss = (abs(255*(img128-g_img128))).mean()
 				rmse_loss = rmse(img128,g_img128)
 				ssim_loss = ssim(img128,g_img128)
+				# tv_losss = tv_loss(255*img128,255*g_img128)
 				# dloss = bce_loss(d(g_img128,img64),true_crit)
 				loss = l2_loss + l1_loss  - args.l1*ssim_loss
 				loss.backward()
@@ -174,17 +185,17 @@ if __name__=='__main__':
 				# d_optimizer.zero_grad()
 				# g_img128 = network(img64)
 				# g_img128.detach()
-				# dloss = bce_loss(d(img128,img64),true_crit)+bce_loss(d(g_img128,img64),false_crit)
+				# dloss = bce_loss(d(torch.cat((img128,g_img128)),torch.cat((img64,img64))),torch.cat((true_crit,fake_crit)))#+bce_loss(d(g_img128,img64),false_crit)
 				# dloss.backward()
 				# d_optimizer.step()
 
 
 				if idx%10 ==0:
-					print("TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} d:{} TOTAL:{} ".format(epoch,idx,
+					print("TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(epoch,idx,
 						(rmse(img128,g_img128).detach().cpu().numpy()),
 						ssim_loss.detach().cpu().numpy(),
 						l1_loss.detach().cpu().numpy(),
-						0,#dloss.detach().cpu().numpy(),
+						0,#tv_losss.detach().cpu().numpy(),
 						loss.detach().cpu().numpy()))
 			train_loss.append((rmse(img128,g_img128).detach().cpu().numpy()))
 
@@ -202,6 +213,8 @@ if __name__=='__main__':
 			val_loss.append(loss_sum/(idx+1))
 			mkdir_p('./models/')
 			torch.save(network, './models/{}_{}.pt'.format(args.model_name, str(epoch)))
+			# optimizer = exp_lr_scheduler(optimizer, epoch)
+
 	else:
 		network.eval()
 		# Load a pretrained model and use that to make the final images

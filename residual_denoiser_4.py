@@ -114,7 +114,7 @@ def exp_lr_scheduler(optimizer, epoch, lr_decay=0.1, lr_decay_epoch=7):
         param_group['lr'] *= lr_decay
     return optimizer
 
-from network import Network, Network_res, Network_up, Network_res_128
+from network import Network, Network_res_, Network_up, Network_res_128_
 from network import Discriminator
 
 def weights_init(m):
@@ -138,7 +138,7 @@ def rmse(img1,img2):
 if __name__=='__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--model_name', default='test')
-	parser.add_argument('--batch_size', default=32)
+	parser.add_argument('--batch_size', type=int, default=32)
 	parser.add_argument('--lr', type=float, default=5e-3)
 	parser.add_argument('--l1', type=float, default=1e1)
 	parser.add_argument('--num_iters', type=int, default=100)
@@ -148,11 +148,11 @@ if __name__=='__main__':
 	args = parser.parse_args()
 
 	train_loader,val_loader,test_loader = read_data(args.batch_size)
-	network = Network_res()
+	network = Network_res_()
 	network.apply(weights_init)
 	network_up = Network_up()
 	network_up.apply(weights_init)
-	network_128 = Network_res_128()
+	network_128 = Network_res_128_()
 	network_128.apply(weights_init)
 
 	bce_loss = torch.nn.BCEWithLogitsLoss()
@@ -182,7 +182,7 @@ if __name__=='__main__':
 			for idx, x in enumerate(train_loader):
 				img64 = x['img64'].cuda()
 				img128 = x['img128'].cuda()
-				# low_img64 = nn.functional.interpolate(img128,scale_factor=0.5, mode='bilinear', align_corners = False)
+				low_img64 = nn.functional.interpolate(img128,scale_factor=0.5, mode='bilinear', align_corners = False)
 				imgname = x['img_name']
 
 
@@ -258,39 +258,41 @@ if __name__=='__main__':
 				optimizer.step()
 
 				if idx%10 ==0:
-					print("{} TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(args.model_name,epoch,idx,
+					print("{} TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(args.model_name,
+						epoch,idx,
 						(rmse_loss.detach().cpu().numpy()),
 						ssim_loss.detach().cpu().numpy(),
 						l1_loss.detach().cpu().numpy(),
 						0,#tv_losss.detach().cpu().numpy(),
 						loss.detach().cpu().numpy()))
+				
 			train_loss.append((rmse(img128,g_img128_denoised).detach().cpu().numpy()))
+			if epoch%1 == 0:
+				with torch.no_grad(): 
+					loss_sum = 0.0
+					network.eval()
+					network_up.eval()
+					network_128.eval()
+					for idx,x in enumerate(val_loader):
+						img64 = x['img64'].cuda()
+						img128 = x['img128'].cuda()
+						imgname = x['img_name']
+						g_img64_res = network(img64)
+						g_img64 = img64-g_img64_res
+						g_img128 = network_up(torch.cat((g_img64,img64),1))
+						g_img128_res = network_128(g_img128)
+						g_img128_denoised = g_img128-g_img128_res
+						loss2 = (rmse(img128,g_img128_denoised).detach().cpu().numpy())
 
-			with torch.no_grad(): 
-				loss_sum = 0.0
-				network.eval()
-				network_up.eval()
-				network_128.eval()
-				for idx,x in enumerate(val_loader):
-					img64 = x['img64'].cuda()
-					img128 = x['img128'].cuda()
-					imgname = x['img_name']
-					g_img64_res = network(img64)
-					g_img64 = img64-g_img64_res
-					g_img128 = network_up(torch.cat((g_img64,img64),1))
-					g_img128_res = network_128(g_img128)
-					g_img128_denoised = g_img128-g_img128_res
-					loss = (rmse(img128,g_img128_denoised).detach().cpu().numpy())
-
-					if idx%10 ==0:
-						print("EVAL: RMSE_LOSS:{} ".format(loss))
-					loss_sum += loss
-				val_loss.append(loss_sum/(idx+1))
-			mkdir_p('./models/')
-			if epoch%10 == 0:
-				torch.save(network, './models/{}_{}.pt'.format(args.model_name, str(epoch)))
-				torch.save(network_up, './models/{}_{}_up.pt'.format(args.model_name, str(epoch)))
-				torch.save(network_128, './models/{}_{}_128.pt'.format(args.model_name, str(epoch)))
+						if idx%10 ==0:
+							print("EVAL: RMSE_LOSS:{} ".format(loss2))
+						loss_sum += loss2
+					val_loss.append(loss_sum/(idx+1))
+					mkdir_p('./models/')
+				
+					torch.save(network, './models/{}_{}.pt'.format(args.model_name, str(epoch)))
+					torch.save(network_up, './models/{}_{}_up.pt'.format(args.model_name, str(epoch)))
+					torch.save(network_128, './models/{}_{}_128.pt'.format(args.model_name, str(epoch)))
 			# optimizer = exp_lr_scheduler(optimizer, epoch)
 
 	else:
@@ -299,8 +301,8 @@ if __name__=='__main__':
 		network_128 = torch.load('./models/{}_128.pt'.format(args.model_name))
 		network_up = torch.load('./models/{}_up.pt'.format(args.model_name))
 		network.eval()
-		network_128.eval()
 		network_up.eval()
+		network_128.eval()
 		for idx, x in enumerate(test_loader):
 			img64 = x['img64'].cuda()
 			imgname = x['img_name']

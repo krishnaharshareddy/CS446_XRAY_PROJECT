@@ -66,7 +66,8 @@ class xrayDataset(torch.utils.data.Dataset):
 				if random.random() > 0.5:
 					image = TF.hflip(image)
 					image64 = TF.hflip(image64)
-				if random.random() > 0.5:
+				if random.random() > 0.99
+:
 					image = TF.vflip(image)
 					image64 = TF.vflip(image64)
 				image = self.transform(image)
@@ -114,7 +115,7 @@ def exp_lr_scheduler(optimizer, epoch, lr_decay=0.1, lr_decay_epoch=7):
         param_group['lr'] *= lr_decay
     return optimizer
 
-from network import Network, Network_res, Network_up, Network_res_128
+from network import Network, Network_res, Network_up
 from network import Discriminator
 
 def weights_init(m):
@@ -144,7 +145,6 @@ if __name__=='__main__':
 	parser.add_argument('--num_iters', type=int, default=100)
 	parser.add_argument("--train", dest="train", default=False, action="store_true")  # noqa
 	parser.add_argument('--test_save_path', default='test')
-	parser.add_argument('--load_earlier', dest="load_earlier", default=False, action="store_true")
 	args = parser.parse_args()
 
 	train_loader,val_loader,test_loader = read_data(args.batch_size)
@@ -152,8 +152,6 @@ if __name__=='__main__':
 	network.apply(weights_init)
 	network_up = Network_up()
 	network_up.apply(weights_init)
-	network_128 = Network_res_128()
-	network_128.apply(weights_init)
 
 	bce_loss = torch.nn.BCEWithLogitsLoss()
 	true_crit, fake_crit = torch.ones(args.batch_size, 1, device='cuda'), torch.zeros(args.batch_size, 1, device='cuda')
@@ -164,152 +162,97 @@ if __name__=='__main__':
 	if args.train:
 		optimizer = torch.optim.Adam(network.parameters(), lr=args.lr)
 		optimizer_up = torch.optim.Adam(network_up.parameters(), lr=args.lr)
-		optimizer_128 = torch.optim.Adam(network_128.parameters(), lr=args.lr)
-		if args.load_earlier:
-			# network = torch.load('./models/{}.pt'.format('residual_denoiser_all_together_49'))
-			# network_128 = torch.load('./models/{}_128.pt'.format('residual_denoiser_3_109'))
-			# network_up = torch.load('./models/{}_up.pt'.format('residual_denoiser_all_together_49'))
-			pass
-
 		network.cuda()
 		network_up.cuda()
-		network_128.cuda()
 		for epoch in range(args.num_iters):
 #			train_loader,val_loader,test_loader = read_data(args.batch_size)
 			network.train()
 			network_up.train()
-			network_128.train()
 			for idx, x in enumerate(train_loader):
 				img64 = x['img64'].cuda()
 				img128 = x['img128'].cuda()
-				# low_img64 = nn.functional.interpolate(img128,scale_factor=0.5, mode='bilinear', align_corners = False)
+				low_img64 = nn.functional.interpolate(img128,scale_factor=0.5, mode='bilinear', align_corners = False)
 				imgname = x['img_name']
-
-
-				# # Learn to denoise 64x64
-				# optimizer.zero_grad()
-				# g_img64_res = network(img64)
-				# g_img64 = img64-g_img64_res
-				# l2_loss = ((255*(low_img64-g_img64))**2).mean()
-				# l1_loss = (abs(255*(low_img64-g_img64))).mean()
-				# rmse_loss = rmse(low_img64,g_img64)
-				# ssim_loss = ssim(low_img64,g_img64)
-				# # tv_losss = tv_loss(255*img128,255*g_img128)
-				# # dloss = bce_loss(d(g_img128,img64),true_crit)
-				# loss = l2_loss #+ l1_loss  - args.l1*ssim_loss
-				# loss.backward(retain_graph=True)
-				# optimizer.step()
-
-				# if idx%10 ==0:
-				# 	print("LOW TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(epoch,idx,
-				# 		(rmse_loss.detach().cpu().numpy()),
-				# 		ssim_loss.detach().cpu().numpy(),
-				# 		l1_loss.detach().cpu().numpy(),
-				# 		0,#tv_losss.detach().cpu().numpy(),
-				# 		loss.detach().cpu().numpy()))
-
-				# # Learn to use 64x64 to make 128x128 images
-				# optimizer_up.zero_grad()
-				# g_img64_res = network(img64)
-				# g_img64 = img64-g_img64_res
-				# g_img64.detach()
-				# g_img128 = network_up(torch.cat((g_img64,img64),1))
-				# l2_loss = ((255*(img128-g_img128))**2).mean()
-				# l1_loss = (abs(255*(img128-g_img128))).mean()
-				# rmse_loss = rmse(img128,g_img128)
-				# ssim_loss = ssim(img128,g_img128)
-				# # tv_losss = tv_loss(255*img128,255*g_img128)
-				# # dloss = bce_loss(d(g_img128,img64),true_crit)
-				# loss = l2_loss + l1_loss  - args.l1*ssim_loss
-				# loss.backward()
-				# optimizer_up.step()
-
-
-				# if idx%10 ==0:
-				# 	print("UP TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(epoch,idx,
-				# 		(rmse(img128,g_img128).detach().cpu().numpy()),
-				# 		ssim_loss.detach().cpu().numpy(),
-				# 		l1_loss.detach().cpu().numpy(),
-				# 		0,#tv_losss.detach().cpu().numpy(),
-				# 		loss.detach().cpu().numpy()))
-
-
-				# Learn to denoise 128x128
-				optimizer_128.zero_grad()
-				optimizer_up.zero_grad()
 				optimizer.zero_grad()
 				g_img64_res = network(img64)
 				g_img64 = img64-g_img64_res
-				# g_img64.detach()
-				g_img128 = network_up(torch.cat((g_img64,img64),1))
-				# g_img128.detach()
-				g_img128_res = network_128(g_img128)
-				g_img128_denoised = g_img128-g_img128_res
-				l2_loss = ((255*(g_img128_denoised-img128))**2).mean()
-				l1_loss = (abs(255*(g_img128_denoised-img128))).mean()
-				rmse_loss = rmse(g_img128_denoised,img128)
-				ssim_loss = ssim(g_img128_denoised,img128)
+				l2_loss = ((255*(low_img64-g_img64))**2).mean()
+				l1_loss = (abs(255*(low_img64-g_img64))).mean()
+				rmse_loss = rmse(low_img64,g_img64)
+				ssim_loss = ssim(low_img64,g_img64)
 				# tv_losss = tv_loss(255*img128,255*g_img128)
 				# dloss = bce_loss(d(g_img128,img64),true_crit)
 				loss = l2_loss + l1_loss  - args.l1*ssim_loss
-				loss.backward()
-				optimizer_128.step()
-				optimizer_up.step()
+				loss.backward(retain_graph=True)
 				optimizer.step()
 
 				if idx%10 ==0:
-					print("{} TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(args.model_name,epoch,idx,
+					print("LOW TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(epoch,idx,
 						(rmse_loss.detach().cpu().numpy()),
 						ssim_loss.detach().cpu().numpy(),
 						l1_loss.detach().cpu().numpy(),
 						0,#tv_losss.detach().cpu().numpy(),
 						loss.detach().cpu().numpy()))
-			train_loss.append((rmse(img128,g_img128_denoised).detach().cpu().numpy()))
 
-			with torch.no_grad(): 
-				loss_sum = 0.0
-				network.eval()
-				network_up.eval()
-				network_128.eval()
-				for idx,x in enumerate(val_loader):
-					img64 = x['img64'].cuda()
-					img128 = x['img128'].cuda()
-					imgname = x['img_name']
-					g_img64_res = network(img64)
-					g_img64 = img64-g_img64_res
-					g_img128 = network_up(torch.cat((g_img64,img64),1))
-					g_img128_res = network_128(g_img128)
-					g_img128_denoised = g_img128-g_img128_res
-					loss = (rmse(img128,g_img128_denoised).detach().cpu().numpy())
 
-					if idx%10 ==0:
-						print("EVAL: RMSE_LOSS:{} ".format(loss))
-					loss_sum += loss
-				val_loss.append(loss_sum/(idx+1))
+				optimizer_up.zero_grad()
+				g_img64_res = network(img64)
+				g_img64 = img64-g_img64_res
+				g_img64.detach()
+				g_img128 = network_up(torch.cat((g_img64,img64),1))
+				l2_loss = ((255*(img128-g_img128))**2).mean()
+				l1_loss = (abs(255*(img128-g_img128))).mean()
+				rmse_loss = rmse(img128,g_img128)
+				ssim_loss = ssim(img128,g_img128)
+				# tv_losss = tv_loss(255*img128,255*g_img128)
+				# dloss = bce_loss(d(g_img128,img64),true_crit)
+				loss = l2_loss + l1_loss  - args.l1*ssim_loss
+				loss.backward()
+				optimizer_up.step()
+
+
+				if idx%10 ==0:
+					print("UP TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(epoch,idx,
+						(rmse(img128,g_img128).detach().cpu().numpy()),
+						ssim_loss.detach().cpu().numpy(),
+						l1_loss.detach().cpu().numpy(),
+						0,#tv_losss.detach().cpu().numpy(),
+						loss.detach().cpu().numpy()))
+			train_loss.append((rmse(img128,g_img128).detach().cpu().numpy()))
+
+			loss_sum = 0.0
+			network.eval()
+			network_up.eval()
+			for idx,x in enumerate(val_loader):
+				img64 = x['img64'].cuda()
+				img128 = x['img128'].cuda()
+				low_img64 = nn.functional.interpolate(img128,scale_factor=0.5, mode='bilinear', align_corners = False)
+				imgname = x['img_name']
+				g_img64_res = network(img64)
+				g_img64 = img64-g_img64_res
+				loss = (rmse(low_img64,g_img64).detach().cpu().numpy())
+
+				g_img128 = network_up(torch.cat((g_img64,img64),1))
+				loss = (rmse(img128,g_img128).detach().cpu().numpy())
+
+				if idx%10 ==0:
+					print("EVAL: RMSE_LOSS:{} ".format(loss))
+				loss_sum += loss
+			val_loss.append(loss_sum/(idx+1))
 			mkdir_p('./models/')
-			if epoch%10 == 0:
-				torch.save(network, './models/{}_{}.pt'.format(args.model_name, str(epoch)))
-				torch.save(network_up, './models/{}_{}_up.pt'.format(args.model_name, str(epoch)))
-				torch.save(network_128, './models/{}_{}_128.pt'.format(args.model_name, str(epoch)))
+			torch.save(network, './models/{}_{}.pt'.format(args.model_name, str(epoch)))
+			torch.save(network_up, './models/{}_{}_up.pt'.format(args.model_name, str(epoch)))
 			# optimizer = exp_lr_scheduler(optimizer, epoch)
 
 	else:
+		network.eval()
 		# Load a pretrained model and use that to make the final images
 		network = torch.load('./models/{}.pt'.format(args.model_name))
-		network_128 = torch.load('./models/{}_128.pt'.format(args.model_name))
-		network_up = torch.load('./models/{}_up.pt'.format(args.model_name))
-		network.eval()
-		network_128.eval()
-		network_up.eval()
 		for idx, x in enumerate(test_loader):
 			img64 = x['img64'].cuda()
 			imgname = x['img_name']
-			g_img64_res = network(img64)
-			g_img64 = img64-g_img64_res
-			g_img128 = network_up(torch.cat((g_img64,img64),1))
-			g_img128_res = network_128(g_img128)
-			g_img128_denoised = g_img128-g_img128_res
-			save_images('./images/'+args.model_name,imgname,g_img128_denoised)
+			g_img128 = network(img64)
+			save_images('./images/'+args.model_name,imgname,g_img128)
 	pdb.set_trace()
 
 
