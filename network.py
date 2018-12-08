@@ -503,28 +503,36 @@ class Network2(nn.Module):
 
 
 
-class Network_res_128_(nn.Module):
+class Network_res_128_2(nn.Module):
 	def __init__(self):
-		super(Network_res_128_, self).__init__()
-		p = 0.2
+		super(Network_res_128_2, self).__init__()
+		p = 0.01
 		self.conv1 = torch.nn.Sequential(
 			#64x64x1
-			nn.Conv2d(1,64,3,stride=1,padding=1),
+			nn.Conv2d(1,64,3,stride=1,padding=1,dilation=1),
 			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
-			nn.Conv2d(64,64,3,stride=1,padding=1),
+			nn.Conv2d(64,64,3,stride=1,padding=2,dilation=2),
 			nn.BatchNorm2d(64),
 			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
-			nn.Conv2d(64,64,3,stride=1,padding=1),
+			nn.Conv2d(64,64,3,stride=1,padding=3,dilation=3),
 			nn.BatchNorm2d(64),
 			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
-			nn.Conv2d(64,64,3,stride=1,padding=1),
+			nn.Conv2d(64,64,3,stride=1,padding=4,dilation=4),
 			nn.BatchNorm2d(64),
 			torch.nn.Dropout2d(p),
 			torch.nn.ReLU(),
-			nn.Conv2d(64,1,3,stride=1,padding=1),
+			nn.Conv2d(64,64,3,stride=1,padding=3,dilation=3),
+			nn.BatchNorm2d(64),
+			torch.nn.Dropout2d(p),
+			torch.nn.ReLU(),
+			nn.Conv2d(64,64,3,stride=1,padding=2,dilation=2),
+			nn.BatchNorm2d(64),
+			torch.nn.Dropout2d(p),
+			torch.nn.ReLU(),
+			nn.Conv2d(64,1,3,stride=1,padding=1,dilation=1),
 			)
 
 		self.conv2 = torch.nn.Sequential(
@@ -541,6 +549,53 @@ class Network_res_128_(nn.Module):
 			#2x128x128
 			nn.Conv2d(3,2,3,stride=1,padding=1),
 			torch.nn.Dropout2d(p),
+			torch.nn.ReLU(),
+			#2x128x128
+			nn.Conv2d(2,1,3,stride=1,padding=1),
+			# torch.nn.Sigmoid(),
+			#1x128x128
+			)
+
+	def forward(self, x):
+		conv1 = self.conv1(x)
+		conv2 = self.conv2(x)
+		# x = (conv1+1)/2
+		x = torch.cat((x,conv1,conv2),1)
+		x = self.conv_mixer(x)
+		return x
+
+class Network_res_(nn.Module):
+	def __init__(self):
+		super(Network_res_, self).__init__()
+		p = 0.2
+		self.conv1 = torch.nn.Sequential(
+			#64x64x1
+			nn.Conv2d(1,64,3,stride=1,padding=1),
+			torch.nn.ReLU(),
+			nn.Conv2d(64,64,3,stride=1,padding=1),
+			nn.BatchNorm2d(64),
+			torch.nn.ReLU(),
+			nn.Conv2d(64,64,3,stride=1,padding=1),
+			nn.BatchNorm2d(64),
+			torch.nn.ReLU(),
+			nn.Conv2d(64,64,3,stride=1,padding=1),
+			nn.BatchNorm2d(64),
+			torch.nn.ReLU(),
+			nn.Conv2d(64,1,3,stride=1,padding=1),
+			)
+
+		self.conv2 = torch.nn.Sequential(
+			#1x64x64
+			nn.Conv2d(1,2,3,stride=1,padding=1),
+			#2x128x128
+			nn.Conv2d(2,1,3,stride=1,padding=1),
+			# torch.nn.Sigmoid(),
+			)
+
+
+		self.conv_mixer = torch.nn.Sequential(
+			#2x128x128
+			nn.Conv2d(3,2,3,stride=1,padding=1),
 			torch.nn.ReLU(),
 			#2x128x128
 			nn.Conv2d(2,1,3,stride=1,padding=1),
