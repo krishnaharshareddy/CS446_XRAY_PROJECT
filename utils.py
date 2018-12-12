@@ -6,6 +6,25 @@ import torch.optim as optim
 from torch.autograd import Variable
 from utils import *
 import pdb
+from collections import defaultdict
+class LossHandler:
+    def __init__(self, print_every=1):
+        # name -> epoch -> list (per batch)
+        self.logs = defaultdict(lambda: defaultdict(list))
+        self.print_every = print_every
+
+    def __getitem__(self, *args, **kwargs):
+        return self.logs.__getitem__(*args, **kwargs)
+
+    def __setitem__(self, *args, **kwargs):
+        return self.logs.__setitem__(*args, **kwargs)
+
+    def log_epoch(self, writer, epoch):
+        for k, v in self.logs.items():
+            if epoch in v:
+                if (epoch < 0) or (epoch % self.print_every == 0):
+                    print("{}[{}]: {}".format(k, epoch, np.mean(v[epoch])))
+                writer.add_scalar(k, np.mean(v[epoch]), epoch)
 def tv_loss(yhat, y, norm=1):
     bsize, chan, height, width = y.size()
     dy = torch.abs(y[:,:,1:,:] - y[:,:,:-1,:])
