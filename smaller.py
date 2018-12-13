@@ -117,26 +117,40 @@ def exp_lr_scheduler(optimizer, epoch, lr_decay=0.1, lr_decay_epoch=7):
     return optimizer
 
 from smaller_network import  Network_res_, Network_up, Network_res_128_
-
+import math
 def weights_init(m):
 	if isinstance(m, torch.nn.Conv2d):
 		torch.nn.init.xavier_uniform_(m.weight.data)
 	if isinstance(m, torch.nn.ConvTranspose2d):
 		torch.nn.init.xavier_uniform_(m.weight.data)
+	# classname = m.__class__.__name__
+	# if classname.find('Conv') != -1:
+	# 	nn.init.kaiming_normal(m.weight.data, a=0, mode='fan_in')
+	# elif classname.find('Linear') != -1:
+	# 	nn.init.kaiming_normal(m.weight.data, a=0, mode='fan_in')
+	# elif classname.find('BatchNorm') != -1:
+	# 	m.weight.data.normal_(mean=0, std=math.sqrt(2./9./64.)).clamp_(-0.025,0.025)
+	# 	nn.init.constant(m.bias.data, 0.0)
 
 def save_images(root,imagenames,images):
 	mkdir_p(root)
 	for i,name in enumerate(imagenames):
 		torchvision.utils.save_image(images[i],root+'/test_{}.png'.format(name))
 
-np.random.seed(1)
+np.random.seed(42)
 torch.backends.cudnn.deterministic = True
-torch.manual_seed(3)
+torch.manual_seed(42)
 
 def rmse(img1,img2):
 	x = ((255*(img1-img2))**2).mean(1).mean(1).mean(1)
 	x = torch.sqrt(x).mean()
 	return x
+def set_bn(to_what,models):
+	for model in models:
+		for child in model.children():
+		    for ii in range(len(child)):
+		        if type(child[ii])==nn.BatchNorm2d:
+		            child[ii].track_running_stats = to_what
 if __name__=='__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--model_name', default='test')
@@ -186,17 +200,16 @@ if __name__=='__main__':
 				optimizer.zero_grad()
 				g_img64_res = network(img64)
 				g_img64 = img64-g_img64_res
-				loss = ((255*(img64-g_img64))**2).mean()/100
 				g_img128 = network_up(torch.cat((g_img64,img64),1))
 				g_img128_res = network_128(g_img128)
 				ssim_loss = ssim(g_img128,img128)
-				loss -=  args.l1*ssim_loss
 				g_img128_denoised = g_img128-g_img128_res
 				l2_loss = ((255*(g_img128_denoised-img128))**2).mean()
 				l1_loss = (abs(255*(g_img128_denoised-img128))).mean()
 				rmse_loss = rmse(g_img128_denoised,img128)
-				ssim_loss = ssim(g_img128_denoised,img128)
-				loss += l2_loss  
+				# ssim_loss = ssim(g_img128_denoised,img128)
+				# - args.l1*ssim_loss
+				loss = l2_loss  + 10*l1_loss - args.l1*ssim_loss
 				loss.backward()
 				optimizer_128.step()
 				optimizer_up.step()
@@ -207,7 +220,7 @@ if __name__=='__main__':
 					print("{} TRAINING {} {}: RMSE_LOSS:{} SSIM:{} L1:{} tv:{} TOTAL:{} ".format(args.model_name,
 						epoch,idx,
 						(rmse_loss.detach().cpu().numpy()),
-						ssim_loss.detach().cpu().numpy(),
+						0,
 						l1_loss.detach().cpu().numpy(),
 						0,#tv_losss.detach().cpu().numpy(),
 						loss.detach().cpu().numpy()))
@@ -252,9 +265,9 @@ if __name__=='__main__':
 
 	else:
 		# Load a pretrained model and use that to make the final images
-		network = torch.load((args.model_name))
-		network_128 = torch.load((args.model_name))
-		network_up = torch.load((args.model_name))
+		network = torch.load((args.model_name+'.pt'))
+		network_128 = torch.load((args.model_name+'_128.pt'))
+		network_up = torch.load((args.model_name+'_up.pt'))
 		network.eval()
 		network_up.eval()
 		network_128.eval()
